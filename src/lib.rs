@@ -1,3 +1,30 @@
+pub mod db {
+    use diesel::{
+        r2d2::{self, ConnectionManager, PooledConnection},
+        PgConnection,
+    };
+
+    type Pool = r2d2::Pool<ConnectionManager<PgConnection>>;
+    pub type DbConnection = PooledConnection<ConnectionManager<PgConnection>>;
+
+    #[derive(Clone)]
+    pub struct Db {
+        pool: Pool,
+    }
+
+    impl Db {
+        pub fn from_url(db_url: String) -> Self {
+            let manager = ConnectionManager::<PgConnection>::new(db_url);
+            let pool = Pool::new(manager).expect("Failed to create database pool");
+            Db { pool }
+        }
+
+        pub fn connection(&self) -> Result<DbConnection, r2d2::PoolError> {
+            self.pool.get()
+        }
+    }
+}
+
 pub mod common {
     use actix_session::Session;
     use actix_web::{get, web::ServiceConfig, HttpResponse, Responder};
