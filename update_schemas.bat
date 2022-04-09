@@ -1,0 +1,1 @@
+sea-orm-cli.exe generate entity -o src/entity --with-serde both

@@ -1,65 +1,129 @@
+use crate::auth::{salt, uuid, hash};
+use crate::entity::users::{self, Entity as User};
+use crate::{
+    entity::users::Column,
+    user::{Delete, Get, Post},
+};
 use actix_web::{
-        delete, get, post,
-        web::{Data, Json, Query, ServiceConfig},
-        HttpResponse, Responder,
+    body::BoxBody,
+    delete, get, post,
+    web::{Data, Json, Query, ServiceConfig},
+    HttpResponse, Responder,
+};
+
+use sea_orm::prelude::Uuid;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter,
+    QuerySelect, Set,
+};
+use torchguard::common::AppState;
+#[get("/users")]
+pub async fn get(query: Query<Get>, data: Data<AppState>) -> HttpResponse<BoxBody> {
+    let conn = &data.pool;
+    let Query(Get { id, q }) = query;
+
+    match id {
+        Some(id) => find_by_id(id, conn).await,
+        None => match q {
+            Some(filter) => find_with_filter(filter, conn).await,
+            None => find_all(conn).await,
+        },
+    }
+}
+#[post("/users")]
+pub async fn post(body: Json<Post>, data: Data<AppState>) -> impl Responder {
+    let Post { email, password } = body.into_inner();
+    let uuid = uuid();
+    let salt = match salt() {
+        Ok(salt) => salt,
+        Err(e) => {
+            return HttpResponse::InternalServerError().body(format!("{e}"));
+        }
     };
-    use mysql::Pool;
-    use serde::{Deserialize, Serialize};
+    let hash = hash(&password, &salt);
 
-    #[derive(Serialize, Deserialize)]
-    pub struct Get {
-        pub username: Option<String>,
+    let model = users::ActiveModel {
+        id: Set(uuid),
+        email: Set(email),
+        hash: Set(hash.into()),
+        salt: Set(salt.into()),
+    };
+
+    let db = &data.pool;
+    match model.insert(db).await {
+        Ok(inserted_model) => HttpResponse::Ok().body(format!("{}", inserted_model.id)),
+        Err(e) => HttpResponse::InternalServerError().body(format!("{e}")),
     }
-
-    #[derive(Serialize, Deserialize)]
-    pub struct Post {
-        pub username: String,
-        pub email: String,
+}
+#[delete("/users")]
+pub async fn delete(query: Query<Delete>) -> impl Responder {
+    if let Some(username) = &query.id {
+        HttpResponse::Ok().body(format!("TODO get user with username: {username}"))
+    } else {
+        HttpResponse::Ok().body(format!("TODO gets all users"))
     }
+}
 
-    #[derive(Serialize, Deserialize)]
-    pub struct Delete {
-        pub id: Option<String>,
+async fn find_all(conn: &DatabaseConnection) -> HttpResponse<BoxBody> {
+    match User::find()
+        .select_only()
+        .column(Column::Id)
+        .column(Column::Email)
+        .into_json()
+        .all(conn)
+        .await
+    {
+        Ok(users) => match users.len() {
+            0 => HttpResponse::NotFound().body("No users found."),
+            _ => HttpResponse::Ok().json(users),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
+}
 
+async fn find_with_filter(filter: String, conn: &DatabaseConnection) -> HttpResponse<BoxBody> {
+    match User::find()
+        .select_only()
+        .column(Column::Id)
+        .column(Column::Email)
+        .filter(
+            Condition::any()
+                .add(Column::Email.contains(&filter)),
+        )
+        .into_json()
+        .all(conn)
+        .await
+    {
+        Ok(users) => match users.len() {
+            0 => HttpResponse::NotFound().body("No users found."),
+            _ => HttpResponse::Ok().json(users),
+        },
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
 
-
-    #[get("/users")]
-    pub async fn get(query: Query<Get>, pool: Data<Pool>) -> impl Responder {
-        match pool.get_conn() {
-            Ok(conn) => {
-                if let Some(username) = &query.username {
-                } else {
-                    
-                }
-                HttpResponse::Ok().body("TODO")
+async fn find_by_id(id: Uuid, conn: &DatabaseConnection) -> HttpResponse<BoxBody> {
+    match User::find_by_id(id)
+        .select_only()
+        .column(Column::Id)
+        .column(Column::Email)
+        .into_json()
+        .one(conn)
+        .await
+    {
+        Ok(v) => {
+            if let Some(user) = v {
+                HttpResponse::Ok().json(user)
+            } else {
+                HttpResponse::NotFound().body("User not found.")
             }
-            Err(e) => HttpResponse::ServiceUnavailable().body("Could not connect to database."),
         }
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
     }
+}
 
-    #[post("/users")]
-    pub async fn post(body: Json<Post>) -> impl Responder {
-        let username = &body.username;
-        let email = &body.email;
-
-        HttpResponse::Ok().body(format!(
-            "TODO succeed if user is added\n{username}\n{email}"
-        ))
-    }
-
-    #[delete("/users")]
-    pub async fn delete(query: Query<Delete>) -> impl Responder {
-        let key_str = std::env::var("ADMIN_KEY").unwrap();
-        if let Some(username) = &query.id {
-            HttpResponse::Ok().body(format!("TODO get user with username: {username}"))
-        } else {
-            HttpResponse::Ok().body(format!("TODO gets all users"))
-        }
-    }
-
-    pub fn init(cfg: &mut ServiceConfig) {
-        cfg.service(get);
-        cfg.service(post);
-        cfg.service(delete);
-    }
+pub fn init(cfg: &mut ServiceConfig) {
+    cfg.service(get);
+    cfg.service(post);
+    cfg.service(delete);
+}

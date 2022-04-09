@@ -1,8 +1,13 @@
 use actix_session::{storage::CookieSessionStore, SessionMiddleware};
-use actix_web::{cookie::Key, middleware::Logger, App, HttpServer};
+use actix_web::{cookie::Key, middleware::Logger, web, App, HttpServer};
+use auth::oidc_client;
+use db::build_db_pool;
 use env_logger::Env;
-use torchguard::{common, db::Db};
 
+use torchguard::common::{self, AppState};
+mod auth;
+mod db;
+mod entity;
 mod user;
 
 #[actix_web::main]
@@ -10,30 +15,27 @@ async fn main() -> std::io::Result<()> {
     dotenv::dotenv().ok();
     env_logger::init_from_env(Env::default().default_filter_or("info"));
 
-    let port: u16 = std::env::var("PORT")
-        .unwrap_or(String::from("8080"))
-        .parse()
-        .unwrap_or(8080);
+    let port = std::env::var("PORT")
+        .expect("No port was found in env.")
+        .parse::<u16>()
+        .expect("Port was not a number.");
+    let hostname = std::env::var("HOSTNAME")
+        .expect("No hostname was found in env.");
 
-    let key_str = std::env::var("AUTH_KEY").expect("No authorization secret key was found.");
-    let key = Key::from(key_str.as_bytes());
-
-    let db = Db::from_url(
-        std::env::var("DATABASE_URL").expect("No database username was specified."), 
-    );
+    let state = AppState {
+        pool: build_db_pool().await,
+        oidc: oidc_client().await,
+    };
 
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::new("%a %r %s %b %{Referer}i %T"))
-            .wrap(SessionMiddleware::new(
-                CookieSessionStore::default(),
-                key.clone(),
-            ))
-            .app_data(db.clone())
-            .configure(common::config)
+            .app_data(web::Data::new(state.clone()))
+            .configure(common::init)
             .configure(user::init)
+            .configure(auth::init)
     })
-    .bind(("127.0.0.1", port))?
+    .bind((hostname, port))?
     .run()
     .await
 }
