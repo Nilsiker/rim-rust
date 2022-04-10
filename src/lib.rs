@@ -1,13 +1,11 @@
 pub mod common {
     use actix_session::Session;
     use actix_web::{get, web::ServiceConfig, HttpResponse, Responder};
-    use openidconnect::core::CoreClient;
     use sea_orm::DatabaseConnection;
 
     #[derive(Clone)]
     pub struct AppState {
         pub pool: DatabaseConnection,
-        pub oidc: CoreClient
     }
 
     #[get("/")]

@@ -16,7 +16,6 @@ serde = {version = "1.0", features = ["derive"]}
 
 # auth
 ring = "0.16.20"
-oauth2 = "4.1.0"
 
 # logging
 env_logger = "0.9"

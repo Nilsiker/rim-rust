@@ -1,9 +1,6 @@
 mod routes;
-use openidconnect::{
-    core::{CoreClient, CoreProviderMetadata},
-    reqwest::{http_client, async_http_client},
-    ClientId, ClientSecret, IssuerUrl, RedirectUrl,
-};
+use actix_session::Session;
+use actix_web::{HttpResponse};
 pub use routes::init;
 
 use ring::{digest, pbkdf2, rand::SecureRandom};
@@ -40,7 +37,10 @@ pub fn hash(password: &str, salt: &[u8]) -> [u8; digest::SHA512_OUTPUT_LEN] {
 }
 
 pub fn verify(password: String, salt: &[u8], hash: &[u8]) -> Result<(), ring::error::Unspecified> {
-    let n_iter = NonZeroU32::new(100_000).unwrap();
+    let n_iter = std::env::var("AUTH.ITERATIONS")
+        .expect("AUTH.ITERATIONS must be set")
+        .parse::<NonZeroU32>()
+        .expect("AUTH.ITERATIONS must be a non-zero positive integer");
 
     pbkdf2::verify(
         pbkdf2::PBKDF2_HMAC_SHA512,
@@ -51,30 +51,25 @@ pub fn verify(password: String, salt: &[u8], hash: &[u8]) -> Result<(), ring::er
     )
 }
 
+pub fn add_user_id_to_session_cookie(session: Session, id: Uuid) -> HttpResponse {
+    match session.insert("user_id", id.to_string()) {
+        Ok(_) => HttpResponse::Ok().body("Authenticated!"),
+        Err(e) => HttpResponse::InternalServerError().body(e.to_string()),
+    }
+}
+
+pub fn is_authenticated(session:Session) -> bool {
+    match session.get::<String>("user_id") {
+        Ok(o) => match o {
+            Some(_) => true,
+            None => false,
+        },
+        Err(_) => false,
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Post {
     pub email: String,
     pub password: String,
-}
-
-pub async fn oidc_client() -> CoreClient {
-    let issuer_url = IssuerUrl::new(std::env::var("AUTH.ISSUER_URL").expect("No issuer URL was found."))
-        .expect("Could not parse issuer URL.");
-
-    let client_id =
-        ClientId::new(std::env::var("AUTH.CLIENT_ID").expect("No client ID was found."));
-
-    let client_secret = ClientSecret::new(
-        std::env::var("AUTH.CLIENT_SECRET").expect("No client secret was found."),
-    );
-
-    let provider_metadata = CoreProviderMetadata::discover_async(issuer_url, async_http_client).await
-        .expect("Could not discover provider metadata.");
-
-    let redirect_url =
-        dbg!(RedirectUrl::new(std::env::var("AUTH.REDIRECT_URL").expect("No redirect URL was found."))
-            .expect("Could not parse redirect URL."));
-
-    CoreClient::from_provider_metadata(provider_metadata, client_id, Some(client_secret))
-        .set_redirect_uri(redirect_url)
 }
