@@ -5,7 +5,9 @@ use crate::entity::users::{Column, Entity as User};
 use actix_session::Session;
 use actix_web::web::{Data, Json};
 use actix_web::{post, web::ServiceConfig, HttpResponse, Responder};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::ColumnTrait;
+use sea_orm::EntityTrait;
+use sea_orm::QueryFilter;
 use torchguard::common::AppState;
 
 #[post("/auth")]

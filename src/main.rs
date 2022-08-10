@@ -1,5 +1,6 @@
-use actix_session::{storage::CookieSessionStore, SessionMiddleware};
-use actix_web::{cookie::Key, middleware::Logger, web, App, HttpServer};
+use actix_cors::Cors;
+use actix_session::{storage::CookieSessionStore, SessionMiddleware, SessionMiddlewareBuilder};
+use actix_web::{cookie::{Key, SameSite}, middleware::Logger, web, App, HttpServer};
 
 use db::build_db_pool;
 use env_logger::Env;
@@ -30,11 +31,23 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .wrap(Logger::new("%a %r %s %b %{Referer}i %T"))
+            .wrap(
+                SessionMiddleware::builder(CookieSessionStore::default(), key.clone())
+                    .cookie_name("torchguard".to_string())
+                    .cookie_secure(false)
+                    .cookie_http_only(false)
+                    .cookie_domain(Some("localhost".to_string()))
+                    .build(),
+            )
+            .wrap(
+                Cors::default()
+                    .allowed_origin("http://localhost:3000")
+                    .allow_any_method()
+                    .allow_any_header()
+                    .send_wildcard()
+                    .supports_credentials(),
+            )
             .app_data(web::Data::new(state.clone()))
-            .wrap(SessionMiddleware::new(
-                CookieSessionStore::default(),
-                key.clone(),
-            ))
             .configure(common::init)
             .configure(user::init)
             .configure(auth::init)

@@ -9,6 +9,7 @@ edition = "2021"
 # web framework
 actix-web = "4"
 actix-session = {version = "0.6.2", features = ["cookie-session"]}
+actix-cors = "0.6.1"
 
 # database management
 sea-orm = { version = "0.7.1", features = [ "sqlx-postgres", "runtime-actix-native-tls", "macros" ] }

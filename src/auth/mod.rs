@@ -61,7 +61,7 @@ pub fn add_user_id_to_session_cookie(session: Session, id: Uuid) -> HttpResponse
 pub fn is_authenticated(session:Session) -> bool {
     match session.get::<String>("user_id") {
         Ok(o) => match o {
-            Some(_) => true,
+            Some(_) => true,    // TODO actually check db if user exists (easily spoofed now)
             None => false,
         },
         Err(_) => false,
